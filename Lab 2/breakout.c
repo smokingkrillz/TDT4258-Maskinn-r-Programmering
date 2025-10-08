@@ -1,5 +1,4 @@
 #include <stdlib.h>
-#include <stdbool.h>
 // these variable are attribute , colo
 unsigned long long __attribute__((used)) VGAaddress = 0xc8000000; // Memory storing pixels
 unsigned int __attribute__((used)) red = 0x0000F0F0;
@@ -20,11 +19,6 @@ unsigned short height = 240;                                   // DON'T TOUCH TH
 unsigned short width = 320;                                    // DON'T TOUCH THIS - keep the value as is
 char font8x8[128][8];                                          // DON'T TOUCH THIS - this is a forward declaration
 unsigned char tiles[NROWS][NCOLS] __attribute__((used)) = {0}; // DON'T TOUCH THIS - this is the tile map
-/**************************************************************************************************/
-
-/***
- * TODO: Define your variables below this comment
- */
 int barY = 120;
 int ballCenterX = 15;
 int ballCenterY = 120;
@@ -57,7 +51,6 @@ void set_default_values()
     barY = 120;
     ballCenterX = 15;
     ballCenterY = 120;
-    dx = 15;
     angle = 90;
     ball_playing = 1;
 }
@@ -393,7 +386,7 @@ void update_game_state()
         currentState = Won;
         return;
     }
-    if (ballCenterX - 3 < 7 && !(ballCenterY >= barY && ballCenterY <= barY + 45))
+    if (ballCenterX - 3 < 7 && !(ballCenterY < barY || ballCenterY > barY + 45))
     {
         currentState = Lost;
         return;
@@ -515,7 +508,6 @@ void reset()
 
     set_default_values();
 
-    currentState = Stopped;
 }
 
 void wait_for_start()
@@ -547,17 +539,10 @@ int main(void)
     while (1)
     {
         wait_for_start();
-        if (currentState == Exit)
-            break;
         set_default_values();
         play();
         reset();
-        if (currentState != Running)
-            break;
-        if (currentState == Won)
-            write(won);
-        if (currentState == Lost)
-            write(lost);
+        
         if (currentState == Exit)
             break;
     }
