@@ -1,0 +1,3 @@
+a short AI-statement
+
+I have used Github copilot to explain parts of the code that I took directly from the book provided to interact with LED and UART Board, as this was not intuitive for me. I struggled a bit to understand WSPACE, and I asked copilot to explain this text line by line so that I could understand much easier. COpilot also adivsed me to divide the code into loops with useful names.
