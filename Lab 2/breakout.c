@@ -28,9 +28,8 @@ unsigned char tiles[NROWS][NCOLS] __attribute__((used)) = {0}; // DON'T TOUCH TH
 int barY = 120;
 int ballCenterX = 15;
 int ballCenterY = 120;
-int dx = 1; // ball velocity
-int dy = 1;
-bool ball_playing = 1;
+int dx = 15; // single speed variable
+unsigned int ball_playing = 1;
 unsigned int angle = 90; // initial angle is 90 (straight right)
 typedef struct _block
 {
@@ -59,7 +58,6 @@ void set_default_values()
     ballCenterX = 15;
     ballCenterY = 120;
     dx = 15;
-    dy = 15;
     angle = 90;
     ball_playing = 1;
 }
@@ -196,7 +194,8 @@ void init_blocks()
     {
         for (int j = 0; j < NROWS; j++)
         {
-            blocks[i][j].pos_x = width - (NCOLS * TILE_SIZE) + i * TILE_SIZE;
+            //blocks[i][j].pos_x = width - (NCOLS * TILE_SIZE) + i * TILE_SIZE;
+            blocks[i][j].pos_x = width - i * TILE_SIZE;
             blocks[i][j].pos_y = j * TILE_SIZE;
             blocks[i][j].color = (i + j) % 2 == 0 ? pink : purple;
             blocks[i][j].destroyed = 0;
@@ -260,32 +259,25 @@ void draw_playing_field()
             draw_block((unsigned)blocks[column][row].pos_x, (unsigned)blocks[column][row].pos_y, TILE_SIZE, TILE_SIZE, color);
         }
     }
-
-    // draw bar and ball
-    draw_bar((unsigned)barY);
-    draw_ball();
 }
 
 void bar_collide()
 {
-    ball_playing = !ball_playing;
+    ball_playing = 1;
     // Determine which region of the bar was hit
     int region = (ballCenterY - barY) / 15;
 
     // move the ball based on region, and if it is retreating or playing
-
     // Upper third: 45° angle (ball goes up and right)
-    if (region <= 0)
+    if (ballCenterY < barY + 15)
     {
         angle = 45;
     }
-
     // Middle third: 90° angle (ball goes straight right)
-    else if (region > 0 && region < 2)
+    else if (ballCenterY < barY + 30)
     {
         angle = 90;
     }
-
     // Lower third: 135° angle (ball goes down and right)
     else
     {
@@ -320,11 +312,8 @@ void block_collide()
             // Collision detected - mark block destroyed
             blocks[i][j].destroyed = 1;
 
-            // Optionally, swap vertical direction if you want bounce
-            // dy = -dy; // Uncomment if you want to bounce vertically too
-
             // ball switches between playing and retreating
-            ball_playing = !ball_playing;
+             ball_playing = 0;
             return;
         }
     }
@@ -332,88 +321,86 @@ void block_collide()
 
 void wall_bounce_check()
 {
-    // Ball hits top wall
-    if (ballCenterY - 3 <= 0)
-    {
-        dy = -dy;        // Reverse vertical direction
-        ballCenterY = 3; // Prevent sticking to wall
-    }
-    // Ball hits bottom wall
-    else if (ballCenterY + 3 >= height)
-    {
-        dy = -dy;                 // Reverse vertical direction
-        ballCenterY = height - 3; // Prevent sticking to wall
-    }
+
+    if (ballCenterY >= height - 7 || ballCenterY <= 0)
+{
+    angle = 180 - angle;
+    if (ballCenterY >= height - 7)
+        ballCenterY = height - 7;
+    else
+        ballCenterY = 0;
+}
+
 }
 void update_game_state()
 {
     if (currentState != Running)
         return;
 
-    // move the ball based on angle and if it is retreating or playing
-    if (ball_playing)
+    // move the ball 
+    int step = 15; 
+
+    if (ball_playing)  // moving right
     {
-        if(angle == 45)
+        if (angle == 45)
         {
-            ballCenterX += dx; // move right
-            ballCenterY -= dy; // move up
+            ballCenterX += step;
+            ballCenterY -= step;
         }
         else if (angle == 90)
         {
-            ballCenterX += dx; // move right
+            ballCenterX += step;
         }
-        else
+        else if (angle == 135)
         {
-            ballCenterX += dx; // move right
-            ballCenterY += dy; // move down
+            ballCenterX += step;
+            ballCenterY += step;
         }
     }
-    else
+    else  // moving left
     {
-        if(angle == 45)
+        if (angle == 45)
         {
-            ballCenterX -= dx; // move left
-            ballCenterY += dy; // move down
+            ballCenterX -= step;
+            ballCenterY -= step;
         }
         else if (angle == 90)
         {
-            ballCenterX -= dx; // move left
+            ballCenterX -= step;
         }
-        else
+        else if (angle == 135)
         {
-            ballCenterX -= dx; // move left
-            ballCenterY -= dy; // move up
+            ballCenterX -= step;
+            ballCenterY += step;
         }
     }
 
-    // WIN/LOSE checks
+    // --- check top/bottom wall bounce ---
+    wall_bounce_check();
+    // --- collisions ---
+    if (ball_playing == 1)
+    {
+        block_collide(); 
+    }// if going right, check blocks
+    else
+    {
+        bar_collide();  
+    }// if going left, check bar
+
+    // --- check WIN/LOSE ---
     if (ballCenterX + 3 >= (int)width)
     {
         currentState = Won;
         return;
     }
-    // if ball goes past left edge and is not hitting the bar
     if (ballCenterX - 3 < 7 && !(ballCenterY >= barY && ballCenterY <= barY + 45))
     {
         currentState = Lost;
         return;
     }
 
-    
-
-    // check wall bounces
-    wall_bounce_check();
-
-    // check collisions with block or bar
-    if (ball_playing)
-    {
-        block_collide();
-    }
-    else
-    {
-        bar_collide();
-    }
 }
+
 
 // move the bar
 void update_bar_state()
@@ -482,6 +469,9 @@ void play()
         }
 
         draw_playing_field();
+        // draw bar and ball
+        draw_ball();
+        draw_bar((unsigned)barY);
     }
     if (currentState == Won)
     {
