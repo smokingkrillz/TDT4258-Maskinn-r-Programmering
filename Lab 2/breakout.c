@@ -1,6 +1,5 @@
-#include <stdlib.h>
-// these variable are attribute , colo
 unsigned long long __attribute__((used)) VGAaddress = 0xc8000000; // Memory storing pixels
+unsigned long long __attribute__((used)) UARTaddress = 0xFF201000;
 unsigned int __attribute__((used)) red = 0x0000F0F0;
 unsigned int __attribute__((used)) green = 0x00000F0F;
 unsigned int __attribute__((used)) blue = 0x000000FF;
@@ -22,8 +21,8 @@ unsigned char tiles[NROWS][NCOLS] __attribute__((used)) = {0}; // DON'T TOUCH TH
 int barY = 120;
 int ballCenterX = 15;
 int ballCenterY = 120;
-int dx = 15; // single speed variable
 unsigned int ball_playing = 1;
+unsigned int dx = 15;    // single speed variable
 unsigned int angle = 90; // initial angle is 90 (straight right)
 typedef struct _block
 {
@@ -34,7 +33,7 @@ typedef struct _block
     unsigned int color;
 } Block;
 
-struct _block blocks[NCOLS][NROWS]; // 10 columns to fill 150px width
+struct _block blocks[NCOLS][NROWS];
 typedef enum _gameState
 {
     Stopped = 0,
@@ -45,8 +44,7 @@ typedef enum _gameState
 } GameState;
 GameState currentState = Stopped;
 // helper functions
-//  Ensures that v stays between low and high
-void set_default_values()
+void default_values()
 {
     barY = 120;
     ballCenterX = 15;
@@ -54,6 +52,7 @@ void set_default_values()
     angle = 90;
     ball_playing = 1;
 }
+
 static inline int clamp(int v, int low, int high)
 {
     if (v < low)
@@ -87,29 +86,9 @@ static inline unsigned char uart_remaining(unsigned long long v)
     return (unsigned char)((v >> 16) & 0xFF);
 }
 
-// returns x coordinate of left edge  leftmost block column
-static inline int leftmost_col_x(void)
-{
-    return width - NCOLS * TILE_SIZE;
-}
-
-// checks if (x,y)i nside a rectangle starting at (x0,y0) with width w and height h.
-// needed to see if ball touched
-static inline int in_rectangle(int x, int y, int x0, int y0, int w, int h)
-{
-    return (x >= x0 && x < x0 + w && y >= y0 && y < y0 + h);
-}
-
-/***
- * Here follow the C declarations for our assembly functions
- */
-
 // Function declarations
-void draw_block(unsigned int x, unsigned int y, unsigned int width, unsigned int height, unsigned int color);
-
 // This function sets a pixel at (x_coord, y_coord) to the given color
 void SetPixel(unsigned int x_coord, unsigned int y_coord, unsigned int color);
-// assumes R0 = x-coord, R1 = y-coord, R2 = colorvalue
 asm("SetPixel: \n\t"
     "LDR R3, =VGAaddress \n\t"
     "LDR R3, [R3] \n\t"
@@ -120,85 +99,49 @@ asm("SetPixel: \n\t"
     "BX LR");
 
 void ClearScreen();
-// It must only clear the VGA screen, and not clear any game state
 asm("ClearScreen: \n\t"
-    // stack preserves the caller's state.
-    "    PUSH {LR} \n\t"
-    "    PUSH {R4, R5} \n\t"
-    // loading where the address of the framebuffer is stored.
-    // LDR R4, [R4] dereferences it to get the value stored there,
-    // the actual framebuffer base pointer (0xC8000000).
-    " LDR R4, = VGAaddress \n\t"
-    "    LDR  R4, [R4]          \n\t" // R4 = base
-                                      // var for the color that will be added - FIX: Changed to 0 for black
-    "    MOV  R5, #0xFFFF       \n\t" // color white
-    "    MOV  R6, #0            \n\t" // y = 0
-    //
-    "1: \n\t" // row loop
-    // row_ptr (R7) = base + y*1024
-    "ADD R7, R4, R6, LSL #10 \n\t"
-    // x = 0
-    " MOV R0, #0 \n\t"
+    "PUSH {LR} \n\t"
+    "PUSH {R4, R5} \n\t"
+    "LDR R2, =white \n\t"
+    "LDR R2, [R2] \n\t"
+    "MOV R5, #0 \n\t"
+    "ClearScreenOuterLoop: \n\t"
+    "MOV R4, #0  \n\t"
+    "ClearScreenInnerLoop: \n\t"
+    "MOV R0, R4 \n\t"
+    "MOV R1, R5 \n\t"
+    "BL SetPixel \n\t"
+    "ADD R4, R4, #1 \n\t"
+    "CMP R4, #320 \n\t"
+    "BEQ ClearScreenNextRow \n\t"
+    "B ClearScreenInnerLoop \n\t"
+    "ClearScreenNextRow: \n\t"
+    "ADD R5, R5, #1 \n\t"
+    "CMP R5, #240 \n\t"
+    "BEQ ClearScreenDone \n\t"
+    "B ClearScreenOuterLoop \n\t"
+    "ClearScreenDone: \n\t"
+    "POP {R4, R5} \n\t"
+    "POP {LR} \n\t"
+    "BX LR");
 
-    "2: \n\t" // pixel loop (320 pixels)
-    // store the least significant 16 bits, color(R5) is 16 bits
-    //  So this writes the black pixel at (x, y).
-    "ADD  R1, R7, R0, LSL #1 \n\t" // R1 = row_ptr + x*2
-    "STRH R5, [R1] \n\t"
-
-    // go forward by 1 for x
-    " ADD R0, R0, #1 \n\t"
-    // check if x is lesser than 320, as that means end of row
-    " CMP R0, #320 \n\t"
-    // branch to 2 if true, b backward
-    " BLT 2b \n\t"
-    // here if end of row of x, go to next column
-    " ADD R6, R6, #1 \n\t"
-    // stop if end of all rows
-    " CMP R6, #240 \n\t"
-    // if not go back
-    " BLT 1b \n\t"
-    "    MOV  R0, #0x10000 \n\t"
-    "    POP {R4,R5}\n\t"
-    "    POP {LR} \n\t"
-    "    BX LR");
 int ReadUart();
 asm("ReadUart:\n\t"
-    "LDR R1, =0xFF201000 \n\t"
-    "LDR R0, [R1]\n\t"
+    "LDR R1, =UARTaddress \n\t"
+    "LDR R1, [R1] \n\t"
+    "LDR R0, [R1] \n\t"
     "BX LR");
+
 void WriteUart(char c);
-// R0 = char
-asm("WriteUart:              \n\t"
-    "    PUSH {LR}           \n\t"
-    "1:                      \n\t"
-    "    LDR  R1, =0xFF201004 \n\t" // CONTROL
-    "    LDR  R2, [R1]        \n\t"
-    "    LSRS R2, R2, #16     \n\t" // WSPACE
-    "    BEQ  1b              \n\t" // wait while 0
-    "    LDR  R1, =0xFF201000 \n\t" // DATA
-    "    STR  R0, [R1]        \n\t" // write byte (low 8 bits used)
-    "    POP  {LR}            \n\t"
-    "    BX   LR              \n\t");
+asm("WriteUart:\n\t"
+    "LDR R1, =UARTaddress \n\t"
+    "LDR R1, [R1] \n\t"
+    "STRH R0, [R1] \n\t"
+    "BX LR");
 
-void init_blocks()
-{
-    for (int i = 0; i < NCOLS; i++)
-    {
-        for (int j = 0; j < NROWS; j++)
-        {
-            //blocks[i][j].pos_x = width - (NCOLS * TILE_SIZE) + i * TILE_SIZE;
-            blocks[i][j].pos_x = width - i * TILE_SIZE;
-            blocks[i][j].pos_y = j * TILE_SIZE;
-            blocks[i][j].color = (i + j) % 2 == 0 ? pink : purple;
-            blocks[i][j].destroyed = 0;
-            blocks[i][j].deleted = 0;
-
-            draw_block(blocks[i][j].pos_x, blocks[i][j].pos_y, 15, 15, blocks[i][j].color);
-        }
-    }
-}
-
+/*
+* Draw a block at the specified position with the given dimensions and color
+*/
 void draw_block(unsigned int x, unsigned int y, unsigned int width, unsigned int height, unsigned int color)
 {
     unsigned int x_end = x + width;
@@ -212,14 +155,38 @@ void draw_block(unsigned int x, unsigned int y, unsigned int width, unsigned int
         }
     }
 }
+/*
+ * Draw the blocks at the starting position
+ */
+void draw_blocks_starting()
+{
+    for (int i = 0; i < NCOLS; i++)
+    {
+        for (int j = 0; j < NROWS; j++)
+        {
+            // blocks[i][j].pos_x = width - (NCOLS * TILE_SIZE) + i * TILE_SIZE;
+            blocks[i][j].pos_x = width - i * TILE_SIZE;
+            blocks[i][j].pos_y = j * TILE_SIZE;
+            blocks[i][j].color = (i + j) % 2 == 0 ? pink : purple;
+            blocks[i][j].destroyed = 0;
+            blocks[i][j].deleted = 0;
 
+            draw_block(blocks[i][j].pos_x, blocks[i][j].pos_y, 15, 15, blocks[i][j].color);
+        }
+    }
+}
+/*
+ * Draw the bar at the specified position, reusing draw_block
+ */
 void draw_bar(unsigned int y)
 {
-    // the bar is 7x45 pixels
-    draw_block(0, y, 7, 45, blue);
-}
 
-void draw_ball(void)
+    draw_block(0, y, 7, 45, black);
+}
+/*
+ * Draw the ball at the current position
+ */
+void draw_ball()
 {
     int cx = ballCenterX;
     int cy = ballCenterY;
@@ -234,11 +201,13 @@ void draw_ball(void)
             int x = cx + dx;
             int y = cy + dy;
             if (x >= 0 && x < width && y >= 0 && y < height)
-                SetPixel(x, y, green);
+                SetPixel(x, y, black);
         }
     }
 }
-
+/*
+ * Draw the playing field
+ */
 void draw_playing_field()
 {
 
@@ -254,20 +223,26 @@ void draw_playing_field()
     }
 }
 
+
+/*
+ * Check for collision with the bar
+ */
 void bar_collide()
 {
+    if (ballCenterX > 7 || ballCenterY < barY || ballCenterY > barY + 45)
+        return; // ball not near bar
     ball_playing = 1;
     // Determine which region of the bar was hit
     int region = (ballCenterY - barY) / 15;
 
     // move the ball based on region, and if it is retreating or playing
     // Upper third: 45° angle (ball goes up and right)
-    if (ballCenterY < barY + 15)
+    if (region == 0)
     {
         angle = 45;
     }
     // Middle third: 90° angle (ball goes straight right)
-    else if (ballCenterY < barY + 30)
+    else if (region == 1)
     {
         angle = 90;
     }
@@ -278,6 +253,9 @@ void bar_collide()
     }
 }
 
+/*
+ * Check for collision with the blocks
+ */
 void block_collide()
 {
     for (int i = 0; i < NCOLS; i++)
@@ -292,48 +270,52 @@ void block_collide()
             unsigned int y_pos = blocks[i][j].pos_y;
 
             // Check collision with ball's 3-pixel radius from all sides
-            int ball_left = ballCenterX - 3;
-            int ball_right = ballCenterX + 3;
-            int ball_top = ballCenterY - 3;
-            int ball_bottom = ballCenterY + 3;
+
+            int x_ball_center = ballCenterX + 3;
+            int y_ball_center = ballCenterY + 3;
 
             // Check if ball overlaps with block (15x15 pixels)
-            if (ball_right < x_pos || ball_left > x_pos + 15 ||
-                ball_bottom < y_pos || ball_top > y_pos + 15)
+            if (x_ball_center < x_pos || x_ball_center > x_pos + 15 || y_ball_center > y_pos + 15 || y_ball_center < y_pos)
                 continue; // No collision
 
             // Collision detected - mark block destroyed
             blocks[i][j].destroyed = 1;
 
             // ball switches between playing and retreating
-             ball_playing = 0;
-            return;
+            ball_playing = !ball_playing;
+            // return;
         }
     }
 }
 
+/*
+ * Check for wall bounce (top/bottom)
+ */
 void wall_bounce_check()
 {
 
     if (ballCenterY >= height - 7 || ballCenterY <= 0)
-{
-    angle = 180 - angle;
-    if (ballCenterY >= height - 7)
-        ballCenterY = height - 7;
-    else
-        ballCenterY = 0;
+    {
+        angle = 180 - angle;
+        if (ballCenterY >= height - 7)
+            ballCenterY = height - 7;
+        else
+            ballCenterY = 0;
+    }
 }
 
-}
+/*
+ * Update the game state
+*/
 void update_game_state()
 {
     if (currentState != Running)
         return;
 
-    // move the ball 
-    int step = 15; 
+    // move the ball
+    int step = 15;
 
-    if (ball_playing)  // moving right
+    if (ball_playing == 1) // moving right
     {
         if (angle == 45)
         {
@@ -350,7 +332,7 @@ void update_game_state()
             ballCenterY += step;
         }
     }
-    else  // moving left
+    else if (ball_playing == 0) // moving left
     {
         if (angle == 45)
         {
@@ -368,32 +350,33 @@ void update_game_state()
         }
     }
 
-    // --- check top/bottom wall bounce ---
+    //  check top/bottom wall bounce 
     wall_bounce_check();
-    // --- collisions ---
+    
+
     if (ball_playing == 1)
     {
-        block_collide(); 
-    }// if going right, check blocks
+        block_collide();
+    } // if going right, check blocks
     else
     {
-        bar_collide();  
-    }// if going left, check bar
+        bar_collide();
+    } // if going left, check bar
 
-    // --- check WIN/LOSE ---
+    // check WIN/LOSE
     if (ballCenterX + 3 >= (int)width)
     {
         currentState = Won;
         return;
     }
-    if (ballCenterX - 3 < 7 && !(ballCenterY < barY || ballCenterY > barY + 45))
+
+    // 7 + 3 (radius)
+    if (ballCenterX < 7 + 3 && (ballCenterY < barY - 3 || ballCenterY > barY + 45 + 3))
     {
         currentState = Lost;
         return;
     }
-
 }
-
 
 // move the bar
 void update_bar_state()
@@ -450,7 +433,7 @@ void write(char *str)
 
 void play()
 {
-    init_blocks();
+    draw_blocks_starting();
     while (1)
     {
         ClearScreen();
@@ -484,30 +467,27 @@ void play()
 // It must initialize the game
 void reset()
 {
-
-    // This is draining the UART buffer
-
     int remaining = 0;
     do
     {
         unsigned long long out = ReadUart();
-        if (!(out & 0x8000))
-        {
+
+        // If UART not ready, nothing to drain
+        if (!uart_ready(out))
             return;
-        }
-        remaining = (out & 0xFF0000) >> 4;
+
+        remaining = uart_remaining(out);
     } while (remaining > 0);
 
     // Validate NCOLS
     if (NCOLS < 1 || NCOLS > 18)
     {
         write("Invalid NCOLS (1..18 required).");
-        currentState = Exit; // not playable
+        currentState = Exit;
         return;
     }
 
-    set_default_values();
-
+    default_values();
 }
 
 void wait_for_start()
@@ -539,10 +519,10 @@ int main(void)
     while (1)
     {
         wait_for_start();
-        set_default_values();
+        default_values();
         play();
         reset();
-        
+
         if (currentState == Exit)
             break;
     }
