@@ -32,6 +32,13 @@ static int joystick_device = -1;
 //frame buffer device represents the file descriptor for the frame buffer device
 int joystick_fd = -1;
 
+//fb_fd is the file descriptor for the frame buffer device
+static int fb_fd = -1;
+//memory pointer to the frame buffer
+static uint16_t *fb_memory = NULL;   // 8*8 RGB565 pixels
+
+//size of the frame buffer in bytes
+static size_t fb_bytes = 8 * 8 * 2;
 
 // If you extend this structure, either avoid pointers or adjust
 // the game logic allocate/deallocate and reset the memory
@@ -82,6 +89,34 @@ gameConfig game = {
 // return false if something fails, else true
 bool initializeSenseHat()
 {
+    //Find and open sense hat framebuffer device
+    char fb_path[32];
+
+    // this comes from the sense hat documentation
+    struct fb_fix_screeninfo fb_finfo = {0};
+    for(int i = 0; i < 10; ++i)
+    {
+        snprintf(fb_path, sizeof(fb_path), "/dev/fb%d", i);
+        fb = open(fb_path, O_RDWR);
+        if (fb == -1)
+        {
+            continue;
+        }
+        //if we can get the screen info, we have found a framebuffer device
+        if (ioctl(fb, FBIOGET_FSCREENINFO, &fb_finfo) == 0 &&
+            strcmp(fb_finfo.id, "RPi-Sense FB") == 0)
+        {
+            fb = fb_fd;
+            continue;
+        }
+        close(fb_fd);
+        if (strcmp(fb_finfo.id, "RPi-Sense FB") == 0)
+        {
+            break;
+        }
+        close(fb_fd);
+        fb_fd = -1;
+    }
     return true;
 }
 
@@ -95,6 +130,7 @@ void freeSenseHat()
    {
        close(joystick_device);
    }
+    // Free the frame buffer device
    if (frame_buffer_device != -1)
    {
        close(frame_buffer_device);
@@ -103,9 +139,6 @@ void freeSenseHat()
 }
 
 // This function should return the key that corresponds to the joystick press
-// KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, with the respective direction
-// and KEY_ENTER, when the the joystick is pressed
-// !!! when nothing was pressed you MUST return 0 !!!
 int readSenseHatJoystick()
 {
    // This struct is used to capture joystick events, comes from linux/input.h
