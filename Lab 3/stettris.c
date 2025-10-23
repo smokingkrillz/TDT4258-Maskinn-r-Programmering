@@ -43,11 +43,15 @@ static size_t fb_bytes = 8 * 8 * 2;
 #define COLOR_WHITE 0xFFFF
 #define COLOR_RED 0xF800
 #define COLOR_GREEN 0x07E0
+#define COLOR_PASTEL_GREEN 0x87F0
 #define COLOR_BLUE 0x001F
 #define COLOR_YELLOW 0xFFE0
 #define COLOR_CYAN 0x07FF
-#define COLOR_MAGENTA 0xF81F
+#define COLOR_MAGENTA 0x00FF
 #define COLOR_ORANGE 0xFC00
+#define COLOR_PURPLE 0x8010
+#define COLOR_PINK 0xF81F
+
 
 int colours[] = {
     COLOR_RED,
@@ -56,8 +60,13 @@ int colours[] = {
     COLOR_YELLOW,
     COLOR_CYAN,
     COLOR_MAGENTA,
+    COLOR_PINK,
+    COLOR_PURPLE,
     COLOR_ORANGE,
-    COLOR_WHITE};
+    COLOR_PASTEL_GREEN,
+    COLOR_WHITE,
+
+};
 // If you extend this structure, either avoid pointers or adjust
 // the game logic allocate/deallocate and reset the memory
 typedef struct
@@ -105,7 +114,7 @@ gameConfig game = {
 
 int changeColor()
 {
-    return colours[rand() % 8];
+    return colours[rand() % 11];
 }
 
 // This function is called on the start of your application
@@ -252,7 +261,7 @@ int readSenseHatJoystick()
         case KEY_ENTER:
             return KEY_ENTER;
         default:
-            return 0;
+            return 0; 
         }
         return 0;
     }
