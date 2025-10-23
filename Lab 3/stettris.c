@@ -171,7 +171,8 @@ bool initializeSenseHat()
             continue;
         }
         // check if this is the joystick device by reading its name
-        if (ioctl(joystick_fd, EVIOCGNAME(sizeof(name)), name) && strcmp(name, "Raspberry Pi Sense HAT Joystick") == 0)
+        if (ioctl(joystick_fd, EVIOCGNAME(sizeof(name)), name) >= 0 && strcmp(name, "Raspberry Pi Sense HAT Joystick") == 0)
+
         {
             joystick_device = joystick_fd;
             break;
