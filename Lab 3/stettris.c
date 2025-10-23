@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <termios.h>
@@ -8,17 +9,16 @@
 #include <string.h>
 #include <time.h>
 #include <poll.h>
-//this file is used to open and close the joystick device
+// this file is used to open and close the joystick device
 #include <fcntl.h>
-//frame buffer include
+// frame buffer include
 #include <linux/fb.h>
-//memory mapping include
+// memory mapping include
 #include <sys/mman.h>
-//error handling include
+// error handling include
 #include <errno.h>
 // input output event include
 #include <sys/ioctl.h>
-
 
 // The game state can be used to detect what happens on the playfield
 #define GAMEOVER 0
@@ -26,25 +26,44 @@
 #define ROW_CLEAR (1 << 1)
 #define TILE_ADDED (1 << 2)
 
-//SEnse hat devices
-//joystick device reprsents the file descriptor for the joystick input device
+// SEnse hat devices
+// joystick device reprsents the file descriptor for the joystick input device
 static int joystick_device = -1;
-//frame buffer device represents the file descriptor for the frame buffer device
-int joystick_fd = -1;
 
-//fb_fd is the file descriptor for the frame buffer device
-static int fb_fd = -1;
-//memory pointer to the frame buffer
-static uint16_t *fb_memory = NULL;   // 8*8 RGB565 pixels
+// frame_buffer_device is the file descriptor for the frame buffer device
+static int frame_buffer_device = -1;
+// memory pointer to the frame buffer
+static uint16_t *fb_memory = NULL; // 8*8 RGB565 pixels
 
-//size of the frame buffer in bytes
+// size of the frame buffer in bytes
 static size_t fb_bytes = 8 * 8 * 2;
 
+// colors in uint16_t RGB565 format
+#define COLOR_BLACK 0x0000
+#define COLOR_WHITE 0xFFFF
+#define COLOR_RED 0xF800
+#define COLOR_GREEN 0x07E0
+#define COLOR_BLUE 0x001F
+#define COLOR_YELLOW 0xFFE0
+#define COLOR_CYAN 0x07FF
+#define COLOR_MAGENTA 0xF81F
+#define COLOR_ORANGE 0xFC00
+
+int colours[] = {
+    COLOR_RED,
+    COLOR_GREEN,
+    COLOR_BLUE,
+    COLOR_YELLOW,
+    COLOR_CYAN,
+    COLOR_MAGENTA,
+    COLOR_ORANGE,
+    COLOR_WHITE};
 // If you extend this structure, either avoid pointers or adjust
 // the game logic allocate/deallocate and reset the memory
 typedef struct
 {
     bool occupied;
+    uint16_t color;
 } tile;
 
 typedef struct
@@ -84,100 +103,169 @@ gameConfig game = {
     .initNextGameTick = 50,
 };
 
+int changeColor()
+{
+    return colours[rand() % 8];
+}
+
 // This function is called on the start of your application
 // Here you can initialize what ever you need for your task
 // return false if something fails, else true
 bool initializeSenseHat()
 {
-    //Find and open sense hat framebuffer device
+    // Find and open sense hat framebuffer device
     char fb_path[32];
 
     // this comes from the sense hat documentation
     struct fb_fix_screeninfo fb_finfo = {0};
-    for(int i = 0; i < 10; ++i)
+    for (int i = 0; i < 10; ++i)
     {
         snprintf(fb_path, sizeof(fb_path), "/dev/fb%d", i);
-        fb = open(fb_path, O_RDWR);
+        int fb = open(fb_path, O_RDWR);
         if (fb == -1)
         {
             continue;
         }
-        //if we can get the screen info, we have found a framebuffer device
+        // if we can get the screen info, we have found a framebuffer device
         if (ioctl(fb, FBIOGET_FSCREENINFO, &fb_finfo) == 0 &&
             strcmp(fb_finfo.id, "RPi-Sense FB") == 0)
         {
-            fb = fb_fd;
+            frame_buffer_device = fb;
             continue;
         }
-        close(fb_fd);
-        if (strcmp(fb_finfo.id, "RPi-Sense FB") == 0)
+        close(fb);
+    }
+    if (frame_buffer_device < 0)
+    {
+        perror("Failed to find Sense HAT framebuffer");
+        return false;
+    }
+
+    fb_memory = (uint16_t *)mmap(NULL, fb_bytes, PROT_READ | PROT_WRITE, MAP_SHARED, frame_buffer_device, 0);
+    if (fb_memory == MAP_FAILED)
+    {
+        fb_memory = NULL;
+        perror("mmap framebuffer failed");
+        return false;
+    }
+
+    // find joystick device , event
+    char js_path[32];
+    char name[128];
+
+    for (int i = 0; i < 32; ++i)
+    {
+        snprintf(js_path, sizeof(js_path), "/dev/input/event%d", i);
+        int joystick_fd = open(js_path, O_RDONLY | O_NONBLOCK);
+        if (joystick_fd == -1)
         {
+            continue;
+        }
+        // check if this is the joystick device by reading its name
+        if (ioctl(joystick_fd, EVIOCGNAME(sizeof(name)), name) && strcmp(name, "Raspberry Pi Sense HAT Joystick") == 0)
+        {
+            joystick_device = joystick_fd;
             break;
         }
-        close(fb_fd);
-        fb_fd = -1;
+        close(joystick_fd);
     }
+
+    if (joystick_device < 0)
+    {
+        perror("Failed to find Sense HAT joystick");
+        return false;
+    }
+
+    //Clear LED matrix on Sense HAT
+    for (unsigned int i = 0; i < 64; i++)
+    {
+        fb_memory[i] = COLOR_BLACK;
+    }
+
     return true;
 }
 
 // This function is called when the application exits
 // Here you can free up everything that you might have opened/allocated
 void freeSenseHat()
-
 {
-   // Free the joystick device
-   if (joystick_device != -1)
-   {
-       close(joystick_device);
-   }
+    // Free the joystick device
+    if (joystick_device != -1)
+    {
+        close(joystick_device);
+        joystick_device = -1;
+    }
     // Free the frame buffer device
-   if (frame_buffer_device != -1)
-   {
-       close(frame_buffer_device);
-   }
+    if (frame_buffer_device != -1)
+    {
+        close(frame_buffer_device);
+        frame_buffer_device = -1;
+    }
 
+    // free memory mapping
+    if (fb_memory != NULL)
+    {
+        munmap(fb_memory, fb_bytes);
+        fb_memory = NULL;
+    }
 }
 
 // This function should return the key that corresponds to the joystick press
 int readSenseHatJoystick()
 {
-   // This struct is used to capture joystick events, comes from linux/input.h
+    // if joystick device is not opened, return 0
+    if (joystick_device < 0)
+    {
+        return 0;
+    }
+    // This struct is used to capture joystick events, comes from linux/input.h
     struct input_event event;
     // Read all available events from the joystick device
-   ssize_t bytes = read(joystick_fd, &event, sizeof(struct input_event));
-   while (bytes > 0)
-   {
-         // is not a key event
-         if (event.type != EV_KEY)
-         {
-               continue;
-         }
-   
-         // is not a key press or auto-repeat event
-         if (ev.value != 1 && ev.value != 2)
-         {
-               continue;
-         }
-   
-         // check which key was pressed
-         //return corresponding key code
-         switch (event.code)
-         {
-         case KEY_UP:
-               return KEY_UP;
-         case KEY_DOWN:
-               return KEY_DOWN;
-         case KEY_LEFT:
-               return KEY_LEFT;
-         case KEY_RIGHT:
-               return KEY_RIGHT;
-         case KEY_ENTER:
-               return KEY_ENTER;
-         default:
-               return 0;
-         }
-    return 0;
-      }
+    ssize_t bytes;
+    while ((bytes = read(joystick_device, &event, sizeof(struct input_event))) > 0)
+    {
+        // is not a key event
+        if (event.type != EV_KEY)
+        {
+            continue;
+        }
+
+        // is not a key press or auto-repeat event
+        // 1 is press, 2 is hold
+        if (event.value != 1 && event.value != 2)
+        {
+            continue;
+        }
+
+        // check which key was pressed
+        // return corresponding key code
+        switch (event.code)
+        {
+        case KEY_UP:
+            return KEY_UP;
+        case KEY_DOWN:
+            return KEY_DOWN;
+        case KEY_LEFT:
+            return KEY_LEFT;
+        case KEY_RIGHT:
+            return KEY_RIGHT;
+        case KEY_ENTER:
+            return KEY_ENTER;
+        default:
+            return 0;
+        }
+        return 0;
+    }
+}
+
+int getTileColor(coord const tile)
+{
+    return game.playfield[tile.y][tile.x].color;
+}
+
+static inline bool tileOccupied(coord const target)
+{
+    return game.playfield[target.y][target.x].occupied;
 }
 
 // This function should render the gamefield on the LED matrix. It is called
@@ -185,7 +273,30 @@ int readSenseHatJoystick()
 // has changed the playfield
 void renderSenseHatMatrix(bool const playfieldChanged)
 {
-    (void)playfieldChanged;
+    // no need to render if the playfield has not changed
+    if(playfieldChanged == false)
+    {
+        return;
+    }
+
+    // render the playfield to the frame buffer memory
+    for (unsigned int y = 0; y < game.grid.y; y++)
+    {
+        for (unsigned int x = 0; x < game.grid.x; x++)
+        {
+            coord const checkTile = {x, y};
+            if (tileOccupied(checkTile) == true)
+            {
+                // set pixel to white
+                fb_memory[y * 8 + x] = getTileColor(checkTile);
+            }
+            else
+            {
+                // set pixel to black
+                fb_memory[y * 8 + x] = 0x0000;
+            }
+        }
+    }
 }
 
 // The game logic uses only the following functions to interact with the playfield.
@@ -195,6 +306,7 @@ void renderSenseHatMatrix(bool const playfieldChanged)
 static inline void newTile(coord const target)
 {
     game.playfield[target.y][target.x].occupied = true;
+    game.playfield[target.y][target.x].color = changeColor();
 }
 
 static inline void copyTile(coord const to, coord const from)
@@ -217,17 +329,13 @@ static inline void resetRow(unsigned int const target)
     memset((void *)&game.playfield[target][0], 0, sizeof(tile) * game.grid.x);
 }
 
-static inline bool tileOccupied(coord const target)
-{
-    return game.playfield[target.y][target.x].occupied;
-}
 
 static inline bool rowOccupied(unsigned int const target)
 {
     for (unsigned int x = 0; x < game.grid.x; x++)
     {
         coord const checkTile = {x, target};
-        if (!tileOccupied(checkTile))
+        if (tileOccupied(checkTile) == false)
         {
             return false;
         }
