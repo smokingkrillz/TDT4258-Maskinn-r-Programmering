@@ -1,0 +1,8 @@
+{
+    "mplab.clangd.arguments": [
+        "--compile-commands-dir=${workspaceFolder}\\_build\\Lab4\\default"
+    ],
+    "mplab.clangd.path": "c:\\Program Files\\Microchip\\xc8\\v3.10\\bin\\xc8-clangd.exe",
+    "C_Cpp.intelliSenseEngine": "disabled",
+    "cmake.sourceDirectory": "C:/Users/aditi/Documents/Uni/Maskinnær/Lab 4/cmake/Lab4/default"
+}
