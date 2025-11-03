@@ -1,6 +1,7 @@
-#include "usart.h"
+#include <avr/io.h>
+#include <stdbool.h>
 #include <avr/power.h>
-#include <avr/sleep.h>7
+#include <avr/sleep.h>
 #define LED_bm PIN2_bm
 void AC_init() { // Disable input buffer and enable pull-up resistor
   PORTA.PINCONFIG = PORT_ISC_INPUT_DISABLE_gc | PORT_PULLUPEN_bm;
@@ -16,24 +17,28 @@ void AC_init() { // Disable input buffer and enable pull-up resistor
   PORTE.PINCTRLUPD = 0xFF;
   PORTD.DIRCLR = LED_bm;
   PORTD.PIN2CTRL = PORT_ISC_INPUT_DISABLE_gc;
-  AC0.MUXCTRL = AC_MUXPOS_AINP0_gc |  AC_MUXNEG_DACREF_gc; // Enable output  and the comparator
-  AC0.CTRLA = AC_RUNSTDBY_bm | AC_ENABLE_bm;
+  AC0.MUXCTRL = AC_MUXPOS_AINP0_gc |  AC_MUXNEG_DACREF_gc;
+  AC0.CTRLA =  AC_POWER_PROFILE2_gc | AC_RUNSTDBY_bm | AC_ENABLE_bm;
   // Enable comparator interrupt
   AC0.DACREF = 25;
   AC0.INTCTRL = 0;
   EVSYS.CHANNEL0 = EVSYS_CHANNEL0_AC0_OUT_gc;
 }
-void VREF_init(void) { VREF.ACREF = VREF_REFSEL_1V024_gc; }
+void VREF_init(void) {
+  VREF.ACREF = VREF_REFSEL_1V024_gc;
+}
+
 void LED_init() {
   PORTA.DIRSET = LED_bm;
   EVSYS.USEREVSYSEVOUTA = 1;
+           // Enable EVOUTA output
+
 } // Function to initialize sleep mode
 void sleep_init(void) {
-  set_sleep_mode(SLEEP_MODE_STANDBY); // Set sleep mode to standby
+  set_sleep_mode(SLEEP_MODE_STANDBY);
 }
-void disable_unused_peripherals(void) {
 
-   _PROTECTED_WRITE(CLKCTRL.MCLKCTRLB, CLKCTRL_PDIV_4X_gc |CLKCTRL_PEN_bm); // Disable USART0
+void disable_unused_peripherals(void) {
   USART0.CTRLA = 0;
   USART0.CTRLB = 0; // Disable TCA0 and TCB0 timers
   TCA0.SINGLE.CTRLA = 0;
@@ -43,17 +48,18 @@ void disable_unused_peripherals(void) {
   PORTA.DIR = 0x00;
   // All pins as inputs
    PORTA.PIN0CTRL = 0;
-
-
-  __asm__ __volatile__("sleep");
+   SPI0.CTRLA = 0;
+TWI0.MCTRLA = 0;
 }
 
 int main() {
-  AC_init();
-  VREF_init();
-  LED_init();
-  disable_unused_peripherals();
-  sleep_init();
+    _PROTECTED_WRITE(CLKCTRL.MCLKCTRLB, CLKCTRL_PDIV_64X_gc | CLKCTRL_PEN_bm);
+    AC_init();
+    VREF_init();
+    LED_init();
+    disable_unused_peripherals();
+    sleep_init();
+    BOD.CTRLA = BOD_SLEEP_DIS_gc | BOD_ACTIVE_ENABLED_gc;
   sleep_mode();
   while (1) {
   }
